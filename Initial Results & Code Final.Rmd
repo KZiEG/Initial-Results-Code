@@ -1,0 +1,484 @@
+---
+title: "Initial Results & Code Final"
+author: "McKenzie - #500730860"
+Prof: "Ceni Babaoglu"
+date: "2023-06-25"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r}
+##libraries
+library(SmartEDA)
+library(tidygeocoder)
+library(dplyr)
+library(xts) #Load package
+library(sf)
+library(ggplot2)
+library(tidyverse)
+library(forecast)
+library(rvest)
+
+```
+
+# Contents
+
+### Cleaning and ETL
+*Loading and unioning data*
+
+* The shelter data is being pulled from the city of Toronto's [Daily Shelter & Overnight Service Occuapncy & Capacity](https://open.toronto.ca/dataset/daily-shelter-overnight-service-occupancy-capacity/) dataset on Toronto's open portal website. 
+
+* The dataset is split into 3 files,1 for each year. For the 2023 year file, the data source is updated daily. 
+
+```{r}
+##Loading data and cleaning date field for union
+ 
+shelter2021<-read.csv('C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2021).csv')
+shelter2021$OCCUPANCY_DATE<-as.Date(shelter2021$OCCUPANCY_DATE, format = "%y-%m-%d")
+
+shelter2022<-read.csv('C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2022).csv')
+shelter2022$OCCUPANCY_DATE<-as.Date(shelter2022$OCCUPANCY_DATE, format = "%y-%m-%d")
+
+shelter2023<-read.csv('C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2023).csv')
+shelter2023$OCCUPANCY_DATE<-as.Date(shelter2023$OCCUPANCY_DATE, format = "%Y-%m-%d")
+
+#Union for complete dataset
+shltr<-rbind(shelter2021,shelter2022,shelter2023)
+```
+
+### Dimension Reduction 
+
+* The shelter(shltr) data source contains information for two exclusive types of shelter programs. Shelter programs are inclusively either room or bed based. For simplicity reasons of this analysis I wont to keep fields are that inclusive to both shelter types and transform the fields to accommodate both types. 
+
+* The following fields will be dropped or transformed. 
+
+|Field|Outcome|Reason|
+|:-----|:------|:----|
+|LOCATION_PROVINCE|Dropped|Single Value: ON|
+|OCCUPANCY_RATE|Calculated Field|Consolidates occupancy rates, inclusive of the capacity type.|
+|OVER_OCCUPIED|Calculated Field|Identifying if a shelter program is over occupied.|
+|ADDRESS|Calculated Field|Concatenates LOCATION_ADDRESS, LOCATION_CITY, LOCATION_PROVINCE|
+
+
+
+```{r}
+##Creating OVER_OCCUPIED field. Identifying programs that are over occupied exclusive of the capacity type
+shltr$OVER_OCCUPIED<-ifelse(shltr$OCCUPANCY_RATE_ROOMS==100|shltr$OCCUPANCY_RATE_BEDS==100,1,0)
+shltr$OVER_OCCUPIED<-ifelse(is.na(shltr$OVER_OCCUPIED)==TRUE,0,1)
+
+##Creating ADDRESS field. It is a program's full address. 
+shltr$ADDRESS<-paste(shltr$LOCATION_ADDRESS,shltr$LOCATION_CITY,shltr$LOCATION_PROVINCE)
+
+##OCCUPANCY_RATES. Creating one field for occupancy rates inclusive of capacity type
+shltr$OCCUPANCY_RATE<-ifelse(is.na(shltr$OCCUPANCY_RATE_BEDS),shltr$OCCUPANCY_RATE_ROOMS,shltr$OCCUPANCY_RATE_BEDS)
+
+##Drop redundant fields
+shltr<-shltr[,c(1:20,33,34,35)]
+```
+
+*Dealing with Missing Values*
+
+```{r}
+
+ExpData(shltr,type=2)
+```
+
+* The proportion of missing values is very small. Most of the missing values are for fields related to location. Since the fields that contain missing values are non-numerical I am going to convert all missing values to "unknown". 
+
+```{r}
+#any missing values for measures? 
+anyNA(shltr$OCCUPANCY_RATE)
+anyNA(shltr$OVER_OCCUPIED)
+```
+
+```{r}
+#The only instances of missing values appear as blanks in location related fields. I am turning all blanks to NAs 
+
+shltr[shltr==""]<-"Unknown"
+shltr[is.na(shltr)]<-"Unknown"
+```
+
+
+```{r}
+#Need to trim leading white spaces from city field
+shltr$LOCATION_CITY<-trimws(shltr$LOCATION_CITY)
+
+```
+
+* Dropping and consolidating redundant fields has taken the data source from 32 fields to 23. 
+
+*Additional geographic information*
+
+* Part of my analysis will involve understanding shelter related metrics across different neighborhood. 
+
+* The following code brings in location related characteristics. The [census tract boundary file](https://www12.statcan.gc.ca/census-recensement/alternative_alternatif.cfm?l=eng&dispext=zip&teng=lct_000b21a_e.zip&k=%20%20%20%2013089&loc=//www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/files-fichiers/lct_000b21a_e.zip) comes from statistics Canada and the city of Toronto's [Neighbourhood file.](https://open.toronto.ca/dataset/neighbourhoods/)
+
+```{r}
+
+##Creating a list of addresses for each shelter program. These addresses will be used to bring Census tract/neighbourhoods for each program. 
+Addresses<-as.data.frame(unique(paste(shltr$LOCATION_ADDRESS,shltr$LOCATION_CITY,shltr$LOCATION_PROVINCE)))
+#Cleaning Column Name
+colnames(Addresses)<-'Addresses'
+
+#Using the tidygeocoder package to bring in lat and longs to each address for neighbourhood identification
+lat_longs<-Addresses %>% 
+  geocode(Addresses)
+#Removing postal codes that did not return a lat/long
+lat_longs<-lat_longs %>%
+  filter(is.na(lat)==FALSE & lat_longs$Addresses!='')
+#Create a point geometric field using the st package
+lat_longs<-lat_longs %>% st_as_sf(coords=c('long','lat'))
+lat_longs<-st_set_crs(lat_longs,4326)
+
+#Raading the census tract boundary file from statistics canada. 
+# Provide the link 
+
+CT<-read_sf("C:\\Users\\User\\Desktop\\CTest\\lct_000a21a_e.shp")
+#Filter for Ontario Province
+CT<-CT %>% filter(PRUID=='35')
+CT<-st_transform(CT,crs=4326)
+
+#Toronto Neighbourhoods Profile. To identify a Toronto Neighbourhood map geometric point to the boundary file found on toronto open data portal
+TNei<-read_sf('C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Neighbourhoods\\Boundary File\\Neighbourhoods - 4326.shp')
+#Table identifying each CT Id for each shelter
+TorCTs<-st_join(lat_longs,CT)
+
+#Decide which fields to keep, bring neighbourhood information to address data source
+TorCTs<-st_join(TorCTs,TNei)
+TorCTs<-TorCTs[,c(1,15,16)]
+
+##Bring Neighbourhood information to the shltr data set. 
+shltr<-left_join(shltr,TorCTs,by=c('ADDRESS' ='Addresses'))
+
+colnames(shltr)[c(24,25)]<-c('Neighbourhood','Improv_Status_Area')
+```
+
+## Exploratory Analysis 
+
+* Since the dataset captures information related to shelters each day I need to convert/create time series objects. For the purpose of clearer visualizations I am going to use xts objects as the time-series objects. 
+
+*Daily Shelter Intake Total*
+
+* Daily intake totals at the overall level will be the first measure of interest.This will be the main measure used for the initial results and code. 
+
+```{r}
+#Defining the index for time for the time series object
+minDate<-min(shltr$OCCUPANCY_DATE)
+maxDate<-max(shltr$OCCUPANCY_DATE)
+indy<-seq(minDate,maxDate,by='day')
+
+##Daily Intakes Aggregated for the Toronto Region. 
+NTakeShltr<-aggregate(SERVICE_USER_COUNT ~ OCCUPANCY_DATE ,data=shltr,FUN=sum)
+colnames(NTakeShltr)[2]<-'TotalUsers'
+##Creating xts(time series) object
+NTakeShltrVec<-NTakeShltr$TotalUsers
+xtsNTakeShltr<-xts(NTakeShltrVec,order.by = indy)
+colnames(xtsNTakeShltr)<-'Total_Intakes'
+```
+
+### Toronto's Daily Shelter Intake Exploratory Analysis
+
+```{r}
+print(summary(xtsNTakeShltr))
+```
+
+```{r}
+
+# Convert the xts object to a data frame
+TorNtakeShltrPlt <- data.frame(Date = index(xtsNTakeShltr), Value = coredata(xtsNTakeShltr))
+#Creating label to identify dates where we see the maximum shelter intakes
+max_date <- index(xtsNTakeShltr)[which.max(coredata(xtsNTakeShltr))]
+#Creating label to identify dates where we see the minimum shelter intakes
+min_date <- index(xtsNTakeShltr)[which.min(coredata(xtsNTakeShltr))]
+
+# Create the plot
+ggplot(data = TorNtakeShltrPlt, aes(x = Date, y = Total_Intakes)) +
+  geom_line()+
+#Adding max and min label dates  
+  geom_text(data = subset(TorNtakeShltrPlt, Date %in% c(max_date, min_date)),
+            aes(label = as.character(Date), vjust = ifelse(Date == max_date, -0.5, 0.5)),
+            show.legend = FALSE)+
+#Adding points to id min and max dates  
+  geom_point(data = subset(TorNtakeShltrPlt, Date %in% c(max_date, min_date)),
+             aes(color = ifelse(Date == max_date, "blue",'red')),
+             size = 3)+
+  labs(title = "Total Daily Shelter Intakes") +
+  xlab("Date") +
+  ylab("Value")+
+  theme(legend.position = 'none')
+
+```
+
+* Looking at the visual we see a increasing trend. This shows that the trend in shelter intakes for the city of Toronto is a non-stationary process. The trend posses qualities of a random walk, there is not a consistent mean or variability. The visual also does not indicate seasonality.
+
+* The lowest levels of intakes occurred on `r min_date` with `r xtsNTakeShltr[min_date] ` intakes and the highest level of intakes on `r max_date` with `r xtsNTakeShltr[max_date]` intakes. The mean of the time series is `r round(mean(xtsNTakeShltr),digits=2)` however since this is non-stationary times eries it is not consistent throughout the trend.
+
+* Since we have a random walk time series, it suggest that each observation is a random step or lag from the previous observations. This makes future values unpredictable and suggest that future values depend on current observations.
+
+```{r}
+plot.ts(ts(diff(xtsNTakeShltr)))
+```
+
+* Differencing (current values - the value directly before it) shows a stationary process.There are some spikes in the variability but we see more variability on the right side of the plot compared to the left. 
+
+* Differencing will be important because we need to remove the trend for statistical models. 
+
+### Multi-Variate Exploratory Analysis 
+
+*City*
+
+```{r}
+
+#Pivoting of analysis
+CityNTakeTrend<-as.data.frame(xtabs(data=shltr,shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$LOCATION_CITY))
+colnames(CityNTakeTrend)<-c("OCCUPANCY_DATE" ,"LOCATION_CITY","SERVICE_USER_COUNT")
+#plot
+ggplot(CityNTakeTrend,aes(x=as.Date(OCCUPANCY_DATE),y=SERVICE_USER_COUNT, color=LOCATION_CITY))+
+  geom_line()+
+  labs(x="Date",y="Total Intakes",color="Location City")
+
+```
+
+* Toronto has the the most intakes consistently It is followed by North York and Scarborough. The trend in the Toronto shelter intakes looks very similar to the overall trend.  
+
+*Sector*
+
+```{r}
+##Total Intakes by Sector
+SecNTake<-shltr %>%
+  group_by(SECTOR) %>% 
+  summarise(TOTAL_INTAKES = sum(SERVICE_USER_COUNT))
+
+ggplot(SecNTake, aes(x = SECTOR, y=TOTAL_INTAKES,fill=SECTOR))+
+  geom_bar(stat='identity') +
+  geom_text(aes(label=format(TOTAL_INTAKES,scientific=FALSE)),vjust = -0.5 )+
+  labs(x='Sector', y = 'Total_Intakes', fill='Sector')+
+  theme_minimal()
+  
+```
+
+* Mixed Adult shelter programs have the most intakes. 
+
+```{r}
+
+#Pivoting of analysis
+SectNTakeTrend<-as.data.frame(xtabs(data=shltr,shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$SECTOR))
+colnames(SectNTakeTrend)<-c("OCCUPANCY_DATE" ,"SECTOR","SERVICE_USER_COUNT")
+#plot
+ggplot(SectNTakeTrend,aes(x=as.Date(OCCUPANCY_DATE),y=SERVICE_USER_COUNT, color=SECTOR))+
+  geom_line()+
+  labs(x="Date",y="Total Intakes",color="Sector")
+
+```
+
+* Mixed Adults consistently have the most intakes however there has been a growing trend in families sector programs. 
+
+* All of the trends show  random walk qualities. 
+
+*Neighbourhood Improvement Areas* 
+
+* Neighbourhood Improvement Areas are neighbourhoods that have several inequalities on several indicators of well-being.
+
+```{r}
+##Pivoting
+ImpArea<-as.data.frame(xtabs(data=shltr, shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$Improv_Status_Area))
+colnames(ImpArea)<-c('OCCUPANCY_DATE','Improvement_area_status','SERVICE_USER_COUNT')
+
+#plot
+ggplot(ImpArea,aes(x=as.Date(OCCUPANCY_DATE), y=SERVICE_USER_COUNT,color=Improvement_area_status))+
+  geom_line()+
+  labs(x='Date', y='Total Intakes', color='Improvement_area_status')
+
+```
+
+* We see that the majority of shelter intakes actually come from programs that are not in a Neighbourhood Improvement Area or Emerging Neighbourhood. 
+
+```{r}
+#Day of the Week Analysis 
+DayNTake<-aggregate(shltr$SERVICE_USER_COUNT ~ weekdays(shltr$OCCUPANCY_DATE, abbreviate = TRUE ),
+          data = shltr,
+          FUN = sum)
+colnames(DayNTake)<-c('Day','TOTAL_INTAKES')
+
+#Plot
+ggplot(DayNTake,aes(x=as.character(Day), y = TOTAL_INTAKES, fill= Day))+
+   geom_bar(stat='identity')+
+   geom_text(aes(label=format(TOTAL_INTAKES,scientific=FALSE)),vjust = -0.5 )+
+   labs(x = 'Day', y=NULL, fill='Day')+
+   scale_x_discrete(limits = unique(DayNTake$Day))+
+   theme_minimal()+
+   theme(axis.text.y = element_blank(),axis.ticks = element_blank())  
+
+```
+
+* Looking at the daily breakdown we can see that distribution across the days of the week it is pretty even. 
+
+## Correlation 
+
+```{r}
+(acf(ts(xtsNTakeShltr)))
+```
+
+* Understanding the autocorrelation is key to analyzes and assessing the correlation between the time series at specific points and lagged values. 
+
+* Looking at the acf plot and outputs we see that there is significance of correlations between lag times 1 - 30. The correlogram shows that all the lags are positively correlated meaning that there is a positive relationship between current observations and lagged values at specific lags. Even though the lags are highly correlated the highest correlated lag is at lag 1. Looking at the acf also shows that there is no seasonality.  
+
+## Forecasting 
+
+* I am going to forecast the next 30 days using time-series forecast models. 
+
+* The models I am going to use and assess are going to be (1) naive (2)SES (3)ARIMA
+
+
+```{r}
+##Creating test and training sets.
+#For forecasting I will convert my xts object to a ts object. 
+tsNTake<-ts(xtsNTakeShltr)
+##Training is all the dates in the time series except the last 30 days (a month)
+trnNTake<-window(tsNTake,end = end(index(tsNTake)[1:(nrow(tsNTake)-31)]))
+##Test
+tstNTake<-window(tsNTake,start=c(end(tsNTake)[1] - 30, end(tsNTake)[2]))
+
+end(tstNTake)
+start(tstNTake)
+```
+
+*Naive*
+```{r}
+#Naive Test
+library(forecast)
+fcNaiNTake<-naive(trnNTake,h=30)
+end(trnNTake)
+autoplot(fcNaiNTake)+
+  autolayer(tstNTake,series='Test Date')
+
+```
+
+*Simple Exponential Smoothing*
+```{r}
+#Simple Exponential Smoothing 
+fcSesNTake<-ses(trnNTake,h=30)
+autoplot(fcSesNTake)+
+  autolayer(tstNTake,series = "SES Test")
+```
+
+*ARIMA*
+```{r}
+ArNTakefit<-auto.arima(trnNTake)
+fcArNTake<-forecast(ArNTakefit,h=31)
+autoplot(fcArNTake)
+```
+
+* The auto.arima function selects the model given the time series. Here it selected a ARIMA(2,1,3) with a drift. Meaning that data has been differenced with a lag of 1, 2 past observations are regressed and 2 past errors are being used in the equation. Looking at the strong linear trend we see that a 1 difference is good enough to make transform the data to stationary. This difference suits the lag of 1 I noted in the acf function above. 
+
+## Evaluating model performance. 
+
+```{r}
+MapeARNTake<-accuracy(fcArNTake,tsNTake)[2,5]
+MapeSesNTake<-accuracy(fcSesNTake,tsNTake)[2,5]
+MapeNaiNTake<-accuracy(fcNaiNTake,tsNTake)[2,5]
+
+MapeValues<-c(accuracy(fcArNTake,tsNTake)[2,5],accuracy(fcSesNTake,tsNTake)[2,5],accuracy(fcNaiNTake,tsNTake)[2,5])
+
+barplot(MapeValues,names.arg = c('ARIMA Model','SES','Naive'))
+text(x = 1:length(MapeValues), y = MapeValues + 0.5, labels = MapeValues, pos = 3, cex = 0.8)
+```
+
+* We can compare the accuracy/quality of the forecast using the MAPE test result. The ARIMA model has lowest value with `accuracy(fcArNTake,tsNTake)[2,5]` suggesting it has the Can compare MAPE, small value indicates a better forecast. We are interested in the test set error measures. 
+
+* The MAPE measures the average percentage difference between the predicted values of the forecast and the actual values. This gives us a idea of forecasts error. 
+
+```{r}
+checkresiduals(fcArNTake)
+```
+
+* The Ljung-Box test shows no significant autocorrelation. When looking at the ACF plot this is confirmed. The residuals also look like a white noise plot and the histogram shows a normal distribution of the residuals. These qualities indicate that the ARIMA model (2,1,3) is a good quality model for forecasting daily shelter intakes.
+
+## Next Steps
+
+* Below are a list of metrics that will be analyzed for final submission. 
+
+```{r}
+##Daily Count of programs operating 
+OpenShltr<-aggregate(PROGRAM_ID ~ OCCUPANCY_DATE,data = shltr,FUN = length)
+colnames(OpenShltr)[2]<-'TotalOpenPrograms'
+
+##Over capacity programs 
+OverCapShltr<-aggregate(OVER_OCCUPIED ~ OCCUPANCY_DATE ,data=shltr,FUN=sum)
+colnames(OverCapShltr)[2]<-'TotalOverCapacityShltrs'
+
+#Proportion of shltrs operating at over capacity
+OverCapPropShltr<-left_join(OpenShltr,OverCapShltr,by = 'OCCUPANCY_DATE')
+OverCapPropShltr$OverCapRate<-round((OverCapPropShltr$TotalOverCapacityShltrs/OverCapPropShltr$TotalOpenPrograms)*100,digits = 2)
+OverCapPropShltr<-OverCapPropShltr[,c(1,4)]
+
+#Capacity Rates
+AvgOccPerShltr<-aggregate(OCCUPANCY_RATE ~ OCCUPANCY_DATE,data=shltr,FUN=mean)
+AvgOccPerShltr$OCCUPANCY_RATE<-round(AvgOccPerShltr$OCCUPANCY_RATE,digits = 2)
+```
+
+* I would like to understand the relationship and correlation between weather and shelter metrics. Below is a script that would bring in weather information to the shelter data source. 
+
+```{r}
+#Bring in weather info 
+url<-"https://climate.weather.gc.ca/climate_data/daily_data_e.html?hlyRange=2009-12-10%7C2023-05-14&dlyRange=2010-02-02%7C2023-05-13&mlyRange=%7C&StationID=48549&Prov=ON&urlExtension=_e.html&searchType=stnName&optLimit=yearRange&StartYear=1840&EndYear=2023&selRowPerPage=25&Line=1&searchMethod=contains&txtStationName=Toronto+city+centre&timeframe=2&Day=14&"
+
+##Webscrapping values prior to 2023
+web_tabledf2022<-NULL
+for (y in 2010:2022){
+  for (m in 1:12) {
+    urlperiod<-paste(url,'Year=',y,'&Month=',m,'#',sep='')
+    #print(urlperiod)
+    webpage<-read_html(urlperiod)
+    web_table<- webpage %>% html_nodes('table')%>%.[1] %>%
+      html_table() %>% .[[1]]
+    web_table$Period<-paste(y,'-',m,sep='')
+    web_table$address<-urlperiod
+    web_tabledf2022<-rbind(web_table,web_tabledf2022)
+  }
+}
+
+
+
+##Websrapping values during 2023
+url<-"https://climate.weather.gc.ca/climate_data/daily_data_e.html?hlyRange=2009-12-10%7C2023-05-14&dlyRange=2010-02-02%7C2023-05-13&mlyRange=%7C&StationID=48549&Prov=ON&urlExtension=_e.html&searchType=stnName&optLimit=yearRange&StartYear=1840&EndYear=2023&selRowPerPage=25&Line=1&searchMethod=contains&txtStationName=Toronto+city+centre&timeframe=2&Day=14&Year=2023&Month="
+web_tabledf2023<-NULL
+for (t in 1:6) {
+  urlperiod<-paste(url,t,'#',sep='')
+  #print(urlperiod)
+  webpage<-read_html(urlperiod)
+  web_table<- webpage %>% html_nodes('table')%>%.[1] %>%
+    html_table() %>% .[[1]]
+  web_table$Period<-paste('2023-',t,sep='')
+  web_table$address<-urlperiod
+  web_tabledf2023<-rbind(web_table,web_tabledf2023)
+}
+
+weatherDF<-rbind(web_tabledf2023,web_tabledf2022)
+weatherDF<-weatherDF[!is.na(as.numeric(weatherDF$DAY)),]
+
+#Clean date column
+#YYYY-MM-DD
+weatherDF$Full_Date<-paste(weatherDF$Period,'-',weatherDF$DAY,sep='')
+weatherDF$Full_Date<-as.Date(weatherDF$Full_Date)
+##Convert columns to numeric
+weatherDF$`Max Temp Definition°C`<-as.numeric(weatherDF$`Max Temp Definition°C`)
+weatherDF$`Min Temp Definition°C`<-as.numeric(weatherDF$`Min Temp Definition°C`)
+weatherDF$`Mean Temp Definition°C`<-as.numeric(weatherDF$`Mean Temp Definition°C`)
+weatherDF$`Total Precip Definitionmm`<-as.numeric(weatherDF$`Total Precip Definitionmm`)
+
+##For missing values use the last value
+#Could sort first
+#The na.locf will fill na values with the value before it
+weatherDF$`Total Precip Definitionmm`<-na.locf(weatherDF$`Total Precip Definitionmm`) 
+weatherDF$`Max Temp Definition°C`<-na.locf(weatherDF$`Max Temp Definition°C`)
+weatherDF$`Min Temp Definition°C`<-na.locf(weatherDF$`Min Temp Definition°C`)
+weatherDF$`Mean Temp Definition°C`<-na.locf(weatherDF$`Mean Temp Definition°C`)
+
+##Filter the weather data on dates to match the range of dates that are in the shltr dataset. 
+weatherDF<-weatherDF%>%filter(between(weatherDF$Full_Date,min(shltr$OCCUPANCY_DATE),max(shltr$OCCUPANCY_DATE)))
+
+shltr<-left_join(shltr,weatherDF,by=c('OCCUPANCY_DATE'='Full_Date'))
+```
+

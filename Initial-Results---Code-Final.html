@@ -1,0 +1,768 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><head></head><body>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="container-fluid main-container">
+
+
+
+
+<div>
+
+
+
+<h1 class="title toc-ignore">Initial Results &amp; Code Final</h1>
+<h4 class="author">McKenzie - #500730860</h4>
+<h4 class="date">2023-06-25</h4>
+
+</div>
+
+
+<pre class="r"><code>##libraries
+library(SmartEDA)</code></pre>
+<pre><code>## Registered S3 method overwritten by &#39;GGally&#39;:
+##   method from   
+##   +.gg   ggplot2</code></pre>
+<pre class="r"><code>library(tidygeocoder)</code></pre>
+<pre><code>## Warning: package &#39;tidygeocoder&#39; was built under R version 4.3.1</code></pre>
+<pre class="r"><code>library(dplyr)</code></pre>
+<pre><code>## 
+## Attaching package: &#39;dplyr&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:stats&#39;:
+## 
+##     filter, lag</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     intersect, setdiff, setequal, union</code></pre>
+<pre class="r"><code>library(xts) #Load package</code></pre>
+<pre><code>## Loading required package: zoo</code></pre>
+<pre><code>## 
+## Attaching package: &#39;zoo&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     as.Date, as.Date.numeric</code></pre>
+<pre><code>## 
+## ######################### Warning from &#39;xts&#39; package ##########################
+## #                                                                             #
+## # The dplyr lag() function breaks how base R&#39;s lag() function is supposed to  #
+## # work, which breaks lag(my_xts). Calls to lag(my_xts) that you type or       #
+## # source() into this session won&#39;t work correctly.                            #
+## #                                                                             #
+## # Use stats::lag() to make sure you&#39;re not using dplyr::lag(), or you can add #
+## # conflictRules(&#39;dplyr&#39;, exclude = &#39;lag&#39;) to your .Rprofile to stop           #
+## # dplyr from breaking base R&#39;s lag() function.                                #
+## #                                                                             #
+## # Code in packages is not affected. It&#39;s protected by R&#39;s namespace mechanism #
+## # Set `options(xts.warn_dplyr_breaks_lag = FALSE)` to suppress this warning.  #
+## #                                                                             #
+## ###############################################################################</code></pre>
+<pre><code>## 
+## Attaching package: &#39;xts&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:dplyr&#39;:
+## 
+##     first, last</code></pre>
+<pre class="r"><code>library(sf)</code></pre>
+<pre><code>## Warning: package &#39;sf&#39; was built under R version 4.3.1</code></pre>
+<pre><code>## Linking to GEOS 3.11.2, GDAL 3.6.2, PROJ 9.2.0; sf_use_s2() is TRUE</code></pre>
+<pre class="r"><code>library(ggplot2)
+library(tidyverse)</code></pre>
+<pre><code>## Warning: package &#39;tidyverse&#39; was built under R version 4.3.1</code></pre>
+<pre><code>## Warning: package &#39;readr&#39; was built under R version 4.3.1</code></pre>
+<pre><code>## Warning: package &#39;lubridate&#39; was built under R version 4.3.1</code></pre>
+<pre><code>## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+## ✔ forcats   1.0.0     ✔ stringr   1.5.0
+## ✔ lubridate 1.9.2     ✔ tibble    3.2.1
+## ✔ purrr     1.0.1     ✔ tidyr     1.3.0
+## ✔ readr     2.1.4</code></pre>
+<pre><code>## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+## ✖ dplyr::filter() masks stats::filter()
+## ✖ xts::first()    masks dplyr::first()
+## ✖ dplyr::lag()    masks stats::lag()
+## ✖ xts::last()     masks dplyr::last()
+## ℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors</code></pre>
+<pre class="r"><code>library(forecast)</code></pre>
+<pre><code>## Warning: package &#39;forecast&#39; was built under R version 4.3.1</code></pre>
+<pre><code>## Registered S3 method overwritten by &#39;quantmod&#39;:
+##   method            from
+##   as.zoo.data.frame zoo</code></pre>
+<pre class="r"><code>library(rvest)</code></pre>
+<pre><code>## 
+## Attaching package: &#39;rvest&#39;
+## 
+## The following object is masked from &#39;package:readr&#39;:
+## 
+##     guess_encoding</code></pre>
+<div class="section level1">
+<h1>Contents</h1>
+<div class="section level3">
+<h3>Cleaning and ETL</h3>
+<p><em>Loading and unioning data</em></p>
+<ul>
+<li><p>The shelter data is being pulled from the city of Toronto’s <a rel="noopener" href="https://open.toronto.ca/dataset/daily-shelter-overnight-service-occupancy-capacity/">Daily
+Shelter &amp; Overnight Service Occuapncy &amp; Capacity</a> dataset on
+Toronto’s open portal website.</p></li>
+<li><p>The dataset is split into 3 files,1 for each year. For the 2023
+year file, the data source is updated daily.</p></li>
+</ul>
+<pre class="r"><code>##Loading data and cleaning date field for union
+ 
+shelter2021&lt;-read.csv(&#39;C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2021).csv&#39;)
+shelter2021$OCCUPANCY_DATE&lt;-as.Date(shelter2021$OCCUPANCY_DATE, format = &quot;%y-%m-%d&quot;)
+
+shelter2022&lt;-read.csv(&#39;C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2022).csv&#39;)
+shelter2022$OCCUPANCY_DATE&lt;-as.Date(shelter2022$OCCUPANCY_DATE, format = &quot;%y-%m-%d&quot;)
+
+shelter2023&lt;-read.csv(&#39;C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Shelter\\Daily Shelter Occupancy\\Current\\Daily shelter overnight occupancy (2023).csv&#39;)
+shelter2023$OCCUPANCY_DATE&lt;-as.Date(shelter2023$OCCUPANCY_DATE, format = &quot;%Y-%m-%d&quot;)
+
+#Union for complete dataset
+shltr&lt;-rbind(shelter2021,shelter2022,shelter2023)</code></pre>
+</div>
+<div class="section level3">
+<h3>Dimension Reduction</h3>
+<ul>
+<li><p>The shelter(shltr) data source contains information for two
+exclusive types of shelter programs. Shelter programs are inclusively
+either room or bed based. For simplicity reasons of this analysis I wont
+to keep fields are that inclusive to both shelter types and transform
+the fields to accommodate both types.</p></li>
+<li><p>The following fields will be dropped or transformed.</p></li>
+</ul>
+<table>
+<colgroup>
+<col width="33%"/>
+<col width="38%"/>
+<col width="27%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Field</th>
+<th align="left">Outcome</th>
+<th align="left">Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">LOCATION_PROVINCE</td>
+<td align="left">Dropped</td>
+<td align="left">Single Value: ON</td>
+</tr>
+<tr class="even">
+<td align="left">OCCUPANCY_RATE</td>
+<td align="left">Calculated Field</td>
+<td align="left">Consolidates occupancy rates, inclusive of the capacity
+type.</td>
+</tr>
+<tr class="odd">
+<td align="left">OVER_OCCUPIED</td>
+<td align="left">Calculated Field</td>
+<td align="left">Identifying if a shelter program is over occupied.</td>
+</tr>
+<tr class="even">
+<td align="left">ADDRESS</td>
+<td align="left">Calculated Field</td>
+<td align="left">Concatenates LOCATION_ADDRESS, LOCATION_CITY,
+LOCATION_PROVINCE</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>##Creating OVER_OCCUPIED field. Identifying programs that are over occupied exclusive of the capacity type
+shltr$OVER_OCCUPIED&lt;-ifelse(shltr$OCCUPANCY_RATE_ROOMS==100|shltr$OCCUPANCY_RATE_BEDS==100,1,0)
+shltr$OVER_OCCUPIED&lt;-ifelse(is.na(shltr$OVER_OCCUPIED)==TRUE,0,1)
+
+##Creating ADDRESS field. It is a program&#39;s full address. 
+shltr$ADDRESS&lt;-paste(shltr$LOCATION_ADDRESS,shltr$LOCATION_CITY,shltr$LOCATION_PROVINCE)
+
+##OCCUPANCY_RATES. Creating one field for occupancy rates inclusive of capacity type
+shltr$OCCUPANCY_RATE&lt;-ifelse(is.na(shltr$OCCUPANCY_RATE_BEDS),shltr$OCCUPANCY_RATE_ROOMS,shltr$OCCUPANCY_RATE_BEDS)
+
+##Drop redundant fields
+shltr&lt;-shltr[,c(1:20,33,34,35)]</code></pre>
+<p><em>Dealing with Missing Values</em></p>
+<pre class="r"><code>ExpData(shltr,type=2)</code></pre>
+<pre><code>##    Index          Variable_Name Variable_Type Sample_n Missing_Count
+## 1      1                   X_id       integer   121170             0
+## 2      2         OCCUPANCY_DATE          Date   121170             0
+## 3      3        ORGANIZATION_ID       integer   121170             0
+## 4      4      ORGANIZATION_NAME     character   121170             0
+## 5      5             SHELTER_ID       integer   121170             0
+## 6      6          SHELTER_GROUP     character   120954           216
+## 7      7            LOCATION_ID       integer   120724           446
+## 8      8          LOCATION_NAME     character   120249           921
+## 9      9       LOCATION_ADDRESS     character   117652          3518
+## 10    10   LOCATION_POSTAL_CODE     character   117652          3518
+## 11    11          LOCATION_CITY     character   117638          3532
+## 12    12      LOCATION_PROVINCE     character   117638          3532
+## 13    13             PROGRAM_ID       integer   121170             0
+## 14    14           PROGRAM_NAME     character   121100            70
+## 15    15                 SECTOR     character   121170             0
+## 16    16          PROGRAM_MODEL     character   121168             2
+## 17    17 OVERNIGHT_SERVICE_TYPE     character   121168             2
+## 18    18           PROGRAM_AREA     character   121168             2
+## 19    19     SERVICE_USER_COUNT       integer   121170             0
+## 20    20          CAPACITY_TYPE     character   121170             0
+## 21    21          OVER_OCCUPIED       numeric   121170             0
+## 22    22                ADDRESS     character   121170             0
+## 23    23         OCCUPANCY_RATE       numeric   121170             0
+##    Per_of_Missing No_of_distinct_values
+## 1           0.000                 50944
+## 2           0.000                   883
+## 3           0.000                    35
+## 4           0.000                    35
+## 5           0.000                    69
+## 6           0.002                    69
+## 7           0.004                   130
+## 8           0.008                   129
+## 9           0.029                   124
+## 10          0.029                   119
+## 11          0.029                     7
+## 12          0.029                     2
+## 13          0.000                   200
+## 14          0.001                   203
+## 15          0.000                     5
+## 16          0.000                     3
+## 17          0.000                     8
+## 18          0.000                     5
+## 19          0.000                   531
+## 20          0.000                     2
+## 21          0.000                     2
+## 22          0.000                   126
+## 23          0.000                  1348</code></pre>
+<ul>
+<li>The proportion of missing values is very small. Most of the missing
+values are for fields related to location. Since the fields that contain
+missing values are non-numerical I am going to convert all missing
+values to “unknown”.</li>
+</ul>
+<pre class="r"><code>#any missing values for measures? 
+anyNA(shltr$OCCUPANCY_RATE)</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+<pre class="r"><code>anyNA(shltr$OVER_OCCUPIED)</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+<pre class="r"><code>#The only instances of missing values appear as blanks in location related fields. I am turning all blanks to NAs 
+
+shltr[shltr==&quot;&quot;]&lt;-&quot;Unknown&quot;
+shltr[is.na(shltr)]&lt;-&quot;Unknown&quot;</code></pre>
+<pre class="r"><code>#Need to trim leading white spaces from city field
+shltr$LOCATION_CITY&lt;-trimws(shltr$LOCATION_CITY)</code></pre>
+<ul>
+<li>Dropping and consolidating redundant fields has taken the data
+source from 32 fields to 23.</li>
+</ul>
+<p><em>Additional geographic information</em></p>
+<ul>
+<li><p>Part of my analysis will involve understanding shelter related
+metrics across different neighborhood.</p></li>
+<li><p>The following code brings in location related characteristics.
+The <a rel="noopener" href="https://www12.statcan.gc.ca/census-recensement/alternative_alternatif.cfm?l=eng&amp;dispext=zip&amp;teng=lct_000b21a_e.zip&amp;k=%20%20%20%2013089&amp;loc=//www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/files-fichiers/lct_000b21a_e.zip">census
+tract boundary file</a> comes from statistics Canada and the city of
+Toronto’s <a rel="noopener" href="https://open.toronto.ca/dataset/neighbourhoods/">Neighbourhood
+file.</a></p></li>
+</ul>
+<pre class="r"><code>##Creating a list of addresses for each shelter program. These addresses will be used to bring Census tract/neighbourhoods for each program. 
+Addresses&lt;-as.data.frame(unique(paste(shltr$LOCATION_ADDRESS,shltr$LOCATION_CITY,shltr$LOCATION_PROVINCE)))
+#Cleaning Column Name
+colnames(Addresses)&lt;-&#39;Addresses&#39;
+
+#Using the tidygeocoder package to bring in lat and longs to each address for neighbourhood identification
+lat_longs&lt;-Addresses %&gt;% 
+  geocode(Addresses)</code></pre>
+<pre><code>## Passing 125 addresses to the Nominatim single address geocoder</code></pre>
+<pre><code>## Query completed in: 128 seconds</code></pre>
+<pre class="r"><code>#Removing postal codes that did not return a lat/long
+lat_longs&lt;-lat_longs %&gt;%
+  filter(is.na(lat)==FALSE &amp; lat_longs$Addresses!=&#39;&#39;)
+#Create a point geometric field using the st package
+lat_longs&lt;-lat_longs %&gt;% st_as_sf(coords=c(&#39;long&#39;,&#39;lat&#39;))
+lat_longs&lt;-st_set_crs(lat_longs,4326)
+
+#Raading the census tract boundary file from statistics canada. 
+# Provide the link 
+
+CT&lt;-read_sf(&quot;C:\\Users\\User\\Desktop\\CTest\\lct_000a21a_e.shp&quot;)
+#Filter for Ontario Province
+CT&lt;-CT %&gt;% filter(PRUID==&#39;35&#39;)
+CT&lt;-st_transform(CT,crs=4326)
+
+#Toronto Neighbourhoods Profile. To identify a Toronto Neighbourhood map geometric point to the boundary file found on toronto open data portal
+TNei&lt;-read_sf(&#39;C:\\Users\\User\\Desktop\\Big Data Analytics Program\\Project\\Tentative Project Datasets\\Neighbourhoods\\Boundary File\\Neighbourhoods - 4326.shp&#39;)
+#Table identifying each CT Id for each shelter
+TorCTs&lt;-st_join(lat_longs,CT)
+
+#Decide which fields to keep, bring neighbourhood information to address data source
+TorCTs&lt;-st_join(TorCTs,TNei)
+TorCTs&lt;-TorCTs[,c(1,15,16)]
+
+##Bring Neighbourhood information to the shltr data set. 
+shltr&lt;-left_join(shltr,TorCTs,by=c(&#39;ADDRESS&#39; =&#39;Addresses&#39;))
+
+colnames(shltr)[c(24,25)]&lt;-c(&#39;Neighbourhood&#39;,&#39;Improv_Status_Area&#39;)</code></pre>
+</div>
+<div class="section level2">
+<h2>Exploratory Analysis</h2>
+<ul>
+<li>Since the dataset captures information related to shelters each day
+I need to convert/create time series objects. For the purpose of clearer
+visualizations I am going to use xts objects as the time-series
+objects.</li>
+</ul>
+<p><em>Daily Shelter Intake Total</em></p>
+<ul>
+<li>Daily intake totals at the overall level will be the first measure
+of interest.This will be the main measure used for the initial results
+and code.</li>
+</ul>
+<pre class="r"><code>#Defining the index for time for the time series object
+minDate&lt;-min(shltr$OCCUPANCY_DATE)
+maxDate&lt;-max(shltr$OCCUPANCY_DATE)
+indy&lt;-seq(minDate,maxDate,by=&#39;day&#39;)
+
+##Daily Intakes Aggregated for the Toronto Region. 
+NTakeShltr&lt;-aggregate(SERVICE_USER_COUNT ~ OCCUPANCY_DATE ,data=shltr,FUN=sum)
+colnames(NTakeShltr)[2]&lt;-&#39;TotalUsers&#39;
+##Creating xts(time series) object
+NTakeShltrVec&lt;-NTakeShltr$TotalUsers
+xtsNTakeShltr&lt;-xts(NTakeShltrVec,order.by = indy)
+colnames(xtsNTakeShltr)&lt;-&#39;Total_Intakes&#39;</code></pre>
+<div class="section level3">
+<h3>Toronto’s Daily Shelter Intake Exploratory Analysis</h3>
+<pre class="r"><code>print(summary(xtsNTakeShltr))</code></pre>
+<pre><code>##      Index            Total_Intakes 
+##  Min.   :2021-01-01   Min.   :5728  
+##  1st Qu.:2021-08-09   1st Qu.:6426  
+##  Median :2022-03-18   Median :7799  
+##  Mean   :2022-03-18   Mean   :7498  
+##  3rd Qu.:2022-10-24   3rd Qu.:8241  
+##  Max.   :2023-06-02   Max.   :9201</code></pre>
+<pre class="r"><code># Convert the xts object to a data frame
+TorNtakeShltrPlt &lt;- data.frame(Date = index(xtsNTakeShltr), Value = coredata(xtsNTakeShltr))
+#Creating label to identify dates where we see the maximum shelter intakes
+max_date &lt;- index(xtsNTakeShltr)[which.max(coredata(xtsNTakeShltr))]
+#Creating label to identify dates where we see the minimum shelter intakes
+min_date &lt;- index(xtsNTakeShltr)[which.min(coredata(xtsNTakeShltr))]
+
+# Create the plot
+ggplot(data = TorNtakeShltrPlt, aes(x = Date, y = Total_Intakes)) +
+  geom_line()+
+#Adding max and min label dates  
+  geom_text(data = subset(TorNtakeShltrPlt, Date %in% c(max_date, min_date)),
+            aes(label = as.character(Date), vjust = ifelse(Date == max_date, -0.5, 0.5)),
+            show.legend = FALSE)+
+#Adding points to id min and max dates  
+  geom_point(data = subset(TorNtakeShltrPlt, Date %in% c(max_date, min_date)),
+             aes(color = ifelse(Date == max_date, &quot;blue&quot;,&#39;red&#39;)),
+             size = 3)+
+  labs(title = &quot;Total Daily Shelter Intakes&quot;) +
+  xlab(&quot;Date&quot;) +
+  ylab(&quot;Value&quot;)+
+  theme(legend.position = &#39;none&#39;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li><p>Looking at the visual we see a increasing trend. This shows that
+the trend in shelter intakes for the city of Toronto is a non-stationary
+process. The trend posses qualities of a random walk, there is not a
+consistent mean or variability. The visual also does not indicate
+seasonality.</p></li>
+<li><p>The lowest levels of intakes occurred on 2021-04-14 with 5728
+intakes and the highest level of intakes on 2023-02-27 with 9201
+intakes. The mean of the time series is 7498.12 however since this is
+non-stationary times eries it is not consistent throughout the
+trend.</p></li>
+<li><p>Since we have a random walk time series, it suggest that each
+observation is a random step or lag from the previous observations. This
+makes future values unpredictable and suggest that future values depend
+on current observations.</p></li>
+</ul>
+<pre class="r"><code>plot.ts(ts(diff(xtsNTakeShltr)))</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li><p>Differencing (current values - the value directly before it)
+shows a stationary process.There are some spikes in the variability but
+we see more variability on the right side of the plot compared to the
+left.</p></li>
+<li><p>Differencing will be important because we need to remove the
+trend for statistical models.</p></li>
+</ul>
+</div>
+<div class="section level3">
+<h3>Multi-Variate Exploratory Analysis</h3>
+<p><em>City</em></p>
+<pre class="r"><code>#Pivoting of analysis
+CityNTakeTrend&lt;-as.data.frame(xtabs(data=shltr,shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$LOCATION_CITY))
+colnames(CityNTakeTrend)&lt;-c(&quot;OCCUPANCY_DATE&quot; ,&quot;LOCATION_CITY&quot;,&quot;SERVICE_USER_COUNT&quot;)
+#plot
+ggplot(CityNTakeTrend,aes(x=as.Date(OCCUPANCY_DATE),y=SERVICE_USER_COUNT, color=LOCATION_CITY))+
+  geom_line()+
+  labs(x=&quot;Date&quot;,y=&quot;Total Intakes&quot;,color=&quot;Location City&quot;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li>Toronto has the the most intakes consistently It is followed by
+North York and Scarborough. The trend in the Toronto shelter intakes
+looks very similar to the overall trend.</li>
+</ul>
+<p><em>Sector</em></p>
+<pre class="r"><code>##Total Intakes by Sector
+SecNTake&lt;-shltr %&gt;%
+  group_by(SECTOR) %&gt;% 
+  summarise(TOTAL_INTAKES = sum(SERVICE_USER_COUNT))
+
+ggplot(SecNTake, aes(x = SECTOR, y=TOTAL_INTAKES,fill=SECTOR))+
+  geom_bar(stat=&#39;identity&#39;) +
+  geom_text(aes(label=format(TOTAL_INTAKES,scientific=FALSE)),vjust = -0.5 )+
+  labs(x=&#39;Sector&#39;, y = &#39;Total_Intakes&#39;, fill=&#39;Sector&#39;)+
+  theme_minimal()</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li>Mixed Adult shelter programs have the most intakes.</li>
+</ul>
+<pre class="r"><code>#Pivoting of analysis
+SectNTakeTrend&lt;-as.data.frame(xtabs(data=shltr,shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$SECTOR))
+colnames(SectNTakeTrend)&lt;-c(&quot;OCCUPANCY_DATE&quot; ,&quot;SECTOR&quot;,&quot;SERVICE_USER_COUNT&quot;)
+#plot
+ggplot(SectNTakeTrend,aes(x=as.Date(OCCUPANCY_DATE),y=SERVICE_USER_COUNT, color=SECTOR))+
+  geom_line()+
+  labs(x=&quot;Date&quot;,y=&quot;Total Intakes&quot;,color=&quot;Sector&quot;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li><p>Mixed Adults consistently have the most intakes however there has
+been a growing trend in families sector programs.</p></li>
+<li><p>All of the trends show random walk qualities.</p></li>
+</ul>
+<p><em>Neighbourhood Improvement Areas</em></p>
+<ul>
+<li>Neighbourhood Improvement Areas are neighbourhoods that have several
+inequalities on several indicators of well-being.</li>
+</ul>
+<pre class="r"><code>##Pivoting
+ImpArea&lt;-as.data.frame(xtabs(data=shltr, shltr$SERVICE_USER_COUNT ~ shltr$OCCUPANCY_DATE + shltr$Improv_Status_Area))
+colnames(ImpArea)&lt;-c(&#39;OCCUPANCY_DATE&#39;,&#39;Improvement_area_status&#39;,&#39;SERVICE_USER_COUNT&#39;)
+
+#plot
+ggplot(ImpArea,aes(x=as.Date(OCCUPANCY_DATE), y=SERVICE_USER_COUNT,color=Improvement_area_status))+
+  geom_line()+
+  labs(x=&#39;Date&#39;, y=&#39;Total Intakes&#39;, color=&#39;Improvement_area_status&#39;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li>We see that the majority of shelter intakes actually come from
+programs that are not in a Neighbourhood Improvement Area or Emerging
+Neighbourhood.</li>
+</ul>
+<pre class="r"><code>#Day of the Week Analysis 
+DayNTake&lt;-aggregate(shltr$SERVICE_USER_COUNT ~ weekdays(shltr$OCCUPANCY_DATE, abbreviate = TRUE ),
+          data = shltr,
+          FUN = sum)
+colnames(DayNTake)&lt;-c(&#39;Day&#39;,&#39;TOTAL_INTAKES&#39;)
+
+#Plot
+ggplot(DayNTake,aes(x=as.character(Day), y = TOTAL_INTAKES, fill= Day))+
+   geom_bar(stat=&#39;identity&#39;)+
+   geom_text(aes(label=format(TOTAL_INTAKES,scientific=FALSE)),vjust = -0.5 )+
+   labs(x = &#39;Day&#39;, y=NULL, fill=&#39;Day&#39;)+
+   scale_x_discrete(limits = unique(DayNTake$Day))+
+   theme_minimal()+
+   theme(axis.text.y = element_blank(),axis.ticks = element_blank())  </code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li>Looking at the daily breakdown we can see that distribution across
+the days of the week it is pretty even.</li>
+</ul>
+</div>
+</div>
+<div class="section level2">
+<h2>Correlation</h2>
+<pre class="r"><code>(acf(ts(xtsNTakeShltr)))</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<pre><code>## 
+## Autocorrelations of series &#39;ts(xtsNTakeShltr)&#39;, by lag
+## 
+##     0     1     2     3     4     5     6     7     8     9    10    11    12 
+## 1.000 0.998 0.996 0.993 0.991 0.989 0.987 0.984 0.982 0.980 0.977 0.975 0.973 
+##    13    14    15    16    17    18    19    20    21    22    23    24    25 
+## 0.970 0.968 0.965 0.963 0.960 0.958 0.955 0.953 0.950 0.947 0.945 0.942 0.939 
+##    26    27    28    29 
+## 0.937 0.934 0.931 0.929</code></pre>
+<ul>
+<li><p>Understanding the autocorrelation is key to analyzes and
+assessing the correlation between the time series at specific points and
+lagged values.</p></li>
+<li><p>Looking at the acf plot and outputs we see that there is
+significance of correlations between lag times 1 - 30. The correlogram
+shows that all the lags are positively correlated meaning that there is
+a positive relationship between current observations and lagged values
+at specific lags. Even though the lags are highly correlated the highest
+correlated lag is at lag 1. Looking at the acf also shows that there is
+no seasonality.</p></li>
+</ul>
+</div>
+<div class="section level2">
+<h2>Forecasting</h2>
+<ul>
+<li><p>I am going to forecast the next 30 days using time-series
+forecast models.</p></li>
+<li><p>The models I am going to use and assess are going to be (1) naive
+(2)SES (3)ARIMA</p></li>
+</ul>
+<pre class="r"><code>##Creating test and training sets.
+#For forecasting I will convert my xts object to a ts object. 
+tsNTake&lt;-ts(xtsNTakeShltr)
+##Training is all the dates in the time series except the last 30 days (a month)
+trnNTake&lt;-window(tsNTake,end = end(index(tsNTake)[1:(nrow(tsNTake)-31)]))
+##Test
+tstNTake&lt;-window(tsNTake,start=c(end(tsNTake)[1] - 30, end(tsNTake)[2]))
+
+end(tstNTake)</code></pre>
+<pre><code>## [1] 883   1</code></pre>
+<pre class="r"><code>start(tstNTake)</code></pre>
+<pre><code>## [1] 853   1</code></pre>
+<p><em>Naive</em></p>
+<pre class="r"><code>#Naive Test
+library(forecast)
+fcNaiNTake&lt;-naive(trnNTake,h=30)
+end(trnNTake)</code></pre>
+<pre><code>## [1] 852   1</code></pre>
+<pre class="r"><code>autoplot(fcNaiNTake)+
+  autolayer(tstNTake,series=&#39;Test Date&#39;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<p><em>Simple Exponential Smoothing</em></p>
+<pre class="r"><code>#Simple Exponential Smoothing 
+fcSesNTake&lt;-ses(trnNTake,h=30)
+autoplot(fcSesNTake)+
+  autolayer(tstNTake,series = &quot;SES Test&quot;)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<p><em>ARIMA</em></p>
+<pre class="r"><code>ArNTakefit&lt;-auto.arima(trnNTake)
+fcArNTake&lt;-forecast(ArNTakefit,h=31)
+autoplot(fcArNTake)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li>The auto.arima function selects the model given the time series.
+Here it selected a ARIMA(2,1,3) with a drift. Meaning that data has been
+differenced with a lag of 1, 2 past observations are regressed and 2
+past errors are being used in the equation. Looking at the strong linear
+trend we see that a 1 difference is good enough to make transform the
+data to stationary. This difference suits the lag of 1 I noted in the
+acf function above.</li>
+</ul>
+</div>
+<div class="section level2">
+<h2>Evaluating model performance.</h2>
+<pre class="r"><code>MapeARNTake&lt;-accuracy(fcArNTake,tsNTake)[2,5]
+MapeSesNTake&lt;-accuracy(fcSesNTake,tsNTake)[2,5]
+MapeNaiNTake&lt;-accuracy(fcNaiNTake,tsNTake)[2,5]
+
+MapeValues&lt;-c(accuracy(fcArNTake,tsNTake)[2,5],accuracy(fcSesNTake,tsNTake)[2,5],accuracy(fcNaiNTake,tsNTake)[2,5])
+
+barplot(MapeValues,names.arg = c(&#39;ARIMA Model&#39;,&#39;SES&#39;,&#39;Naive&#39;))
+text(x = 1:length(MapeValues), y = MapeValues + 0.5, labels = MapeValues, pos = 3, cex = 0.8)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<ul>
+<li><p>We can compare the accuracy/quality of the forecast using the
+MAPE test result. The ARIMA model has lowest value with
+<code>accuracy(fcArNTake,tsNTake)[2,5]</code> suggesting it has the Can
+compare MAPE, small value indicates a better forecast. We are interested
+in the test set error measures.</p></li>
+<li><p>The MAPE measures the average percentage difference between the
+predicted values of the forecast and the actual values. This gives us a
+idea of forecasts error.</p></li>
+</ul>
+<pre class="r"><code>checkresiduals(fcArNTake)</code></pre>
+<p><img src="javascript://" width="672"/></p>
+<pre><code>## 
+##  Ljung-Box test
+## 
+## data:  Residuals from ARIMA(2,1,3) with drift
+## Q* = 6.2126, df = 5, p-value = 0.2861
+## 
+## Model df: 5.   Total lags used: 10</code></pre>
+<ul>
+<li>The Ljung-Box test shows no significant autocorrelation. When
+looking at the ACF plot this is confirmed. The residuals also look like
+a white noise plot and the histogram shows a normal distribution of the
+residuals. These qualities indicate that the ARIMA model (2,1,3) is a
+good quality model for forecasting daily shelter intakes.</li>
+</ul>
+</div>
+<div class="section level2">
+<h2>Next Steps</h2>
+<ul>
+<li>Below are a list of metrics that will be analyzed for final
+submission.</li>
+</ul>
+<pre class="r"><code>##Daily Count of programs operating 
+OpenShltr&lt;-aggregate(PROGRAM_ID ~ OCCUPANCY_DATE,data = shltr,FUN = length)
+colnames(OpenShltr)[2]&lt;-&#39;TotalOpenPrograms&#39;
+
+##Over capacity programs 
+OverCapShltr&lt;-aggregate(OVER_OCCUPIED ~ OCCUPANCY_DATE ,data=shltr,FUN=sum)
+colnames(OverCapShltr)[2]&lt;-&#39;TotalOverCapacityShltrs&#39;
+
+#Proportion of shltrs operating at over capacity
+OverCapPropShltr&lt;-left_join(OpenShltr,OverCapShltr,by = &#39;OCCUPANCY_DATE&#39;)
+OverCapPropShltr$OverCapRate&lt;-round((OverCapPropShltr$TotalOverCapacityShltrs/OverCapPropShltr$TotalOpenPrograms)*100,digits = 2)
+OverCapPropShltr&lt;-OverCapPropShltr[,c(1,4)]
+
+#Capacity Rates
+AvgOccPerShltr&lt;-aggregate(OCCUPANCY_RATE ~ OCCUPANCY_DATE,data=shltr,FUN=mean)
+AvgOccPerShltr$OCCUPANCY_RATE&lt;-round(AvgOccPerShltr$OCCUPANCY_RATE,digits = 2)</code></pre>
+<ul>
+<li>I would like to understand the relationship and correlation between
+weather and shelter metrics. Below is a script that would bring in
+weather information to the shelter data source.</li>
+</ul>
+<pre class="r"><code>#Bring in weather info 
+url&lt;-&quot;https://climate.weather.gc.ca/climate_data/daily_data_e.html?hlyRange=2009-12-10%7C2023-05-14&amp;dlyRange=2010-02-02%7C2023-05-13&amp;mlyRange=%7C&amp;StationID=48549&amp;Prov=ON&amp;urlExtension=_e.html&amp;searchType=stnName&amp;optLimit=yearRange&amp;StartYear=1840&amp;EndYear=2023&amp;selRowPerPage=25&amp;Line=1&amp;searchMethod=contains&amp;txtStationName=Toronto+city+centre&amp;timeframe=2&amp;Day=14&amp;&quot;
+
+##Webscrapping values prior to 2023
+web_tabledf2022&lt;-NULL
+for (y in 2010:2022){
+  for (m in 1:12) {
+    urlperiod&lt;-paste(url,&#39;Year=&#39;,y,&#39;&amp;Month=&#39;,m,&#39;#&#39;,sep=&#39;&#39;)
+    #print(urlperiod)
+    webpage&lt;-read_html(urlperiod)
+    web_table&lt;- webpage %&gt;% html_nodes(&#39;table&#39;)%&gt;%.[1] %&gt;%
+      html_table() %&gt;% .[[1]]
+    web_table$Period&lt;-paste(y,&#39;-&#39;,m,sep=&#39;&#39;)
+    web_table$address&lt;-urlperiod
+    web_tabledf2022&lt;-rbind(web_table,web_tabledf2022)
+  }
+}
+
+
+
+##Websrapping values during 2023
+url&lt;-&quot;https://climate.weather.gc.ca/climate_data/daily_data_e.html?hlyRange=2009-12-10%7C2023-05-14&amp;dlyRange=2010-02-02%7C2023-05-13&amp;mlyRange=%7C&amp;StationID=48549&amp;Prov=ON&amp;urlExtension=_e.html&amp;searchType=stnName&amp;optLimit=yearRange&amp;StartYear=1840&amp;EndYear=2023&amp;selRowPerPage=25&amp;Line=1&amp;searchMethod=contains&amp;txtStationName=Toronto+city+centre&amp;timeframe=2&amp;Day=14&amp;Year=2023&amp;Month=&quot;
+web_tabledf2023&lt;-NULL
+for (t in 1:6) {
+  urlperiod&lt;-paste(url,t,&#39;#&#39;,sep=&#39;&#39;)
+  #print(urlperiod)
+  webpage&lt;-read_html(urlperiod)
+  web_table&lt;- webpage %&gt;% html_nodes(&#39;table&#39;)%&gt;%.[1] %&gt;%
+    html_table() %&gt;% .[[1]]
+  web_table$Period&lt;-paste(&#39;2023-&#39;,t,sep=&#39;&#39;)
+  web_table$address&lt;-urlperiod
+  web_tabledf2023&lt;-rbind(web_table,web_tabledf2023)
+}
+
+weatherDF&lt;-rbind(web_tabledf2023,web_tabledf2022)
+weatherDF&lt;-weatherDF[!is.na(as.numeric(weatherDF$DAY)),]</code></pre>
+<pre><code>## Warning in `[.tbl_df`(weatherDF, !is.na(as.numeric(weatherDF$DAY)), ): NAs
+## introduced by coercion</code></pre>
+<pre class="r"><code>#Clean date column
+#YYYY-MM-DD
+weatherDF$Full_Date&lt;-paste(weatherDF$Period,&#39;-&#39;,weatherDF$DAY,sep=&#39;&#39;)
+weatherDF$Full_Date&lt;-as.Date(weatherDF$Full_Date)
+##Convert columns to numeric
+weatherDF$`Max Temp Definition&#176;C`&lt;-as.numeric(weatherDF$`Max Temp Definition&#176;C`)</code></pre>
+<pre><code>## Warning: NAs introduced by coercion</code></pre>
+<pre class="r"><code>weatherDF$`Min Temp Definition&#176;C`&lt;-as.numeric(weatherDF$`Min Temp Definition&#176;C`)</code></pre>
+<pre><code>## Warning: NAs introduced by coercion</code></pre>
+<pre class="r"><code>weatherDF$`Mean Temp Definition&#176;C`&lt;-as.numeric(weatherDF$`Mean Temp Definition&#176;C`)</code></pre>
+<pre><code>## Warning: NAs introduced by coercion</code></pre>
+<pre class="r"><code>weatherDF$`Total Precip Definitionmm`&lt;-as.numeric(weatherDF$`Total Precip Definitionmm`)</code></pre>
+<pre><code>## Warning: NAs introduced by coercion</code></pre>
+<pre class="r"><code>##For missing values use the last value
+#Could sort first
+#The na.locf will fill na values with the value before it
+weatherDF$`Total Precip Definitionmm`&lt;-na.locf(weatherDF$`Total Precip Definitionmm`) 
+weatherDF$`Max Temp Definition&#176;C`&lt;-na.locf(weatherDF$`Max Temp Definition&#176;C`)
+weatherDF$`Min Temp Definition&#176;C`&lt;-na.locf(weatherDF$`Min Temp Definition&#176;C`)
+weatherDF$`Mean Temp Definition&#176;C`&lt;-na.locf(weatherDF$`Mean Temp Definition&#176;C`)
+
+##Filter the weather data on dates to match the range of dates that are in the shltr dataset. 
+weatherDF&lt;-weatherDF%&gt;%filter(between(weatherDF$Full_Date,min(shltr$OCCUPANCY_DATE),max(shltr$OCCUPANCY_DATE)))
+
+shltr&lt;-left_join(shltr,weatherDF,by=c(&#39;OCCUPANCY_DATE&#39;=&#39;Full_Date&#39;))</code></pre>
+</div>
+</div>
+
+
+
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script type="module" src="https://s.brightspace.com/lib/bsi/20.23.6-201/unbundled/mathjax.js"></script><script type="text/javascript">document.addEventListener('DOMContentLoaded', function() {
+					if (document.querySelector('math') || /\$\$|\\\(|\\\[|\\begin{|\\ref{|\\eqref{/.test(document.body.innerHTML)) {
+						document.querySelectorAll('mspace[linebreak="newline"]').forEach(elm => {
+							elm.setAttribute('style', 'display: block; height: 0.5rem;');
+						});
+
+						window.D2L.MathJax.loadMathJax({
+							'outputScale': 1.3,
+							'renderLatex': true
+						});
+					}
+				});</script><script type="module" src="https://s.brightspace.com/lib/bsi/20.23.6-201/unbundled/prism.js"></script><script type="text/javascript">document.addEventListener('DOMContentLoaded', function() {
+					document.querySelectorAll('.d2l-code').forEach(code => {
+						window.D2L.Prism.formatCodeElement(code);
+					});
+				});</script></body></html>
